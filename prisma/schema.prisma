@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  APPROVED
+  SENT
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  WAITING_REVIEW
+  DONE
+  BLOCKED
+}
+
+model Company {
+  id              String              @id @default(uuid()) @db.Uuid
+  code            String              @unique
+  legalName       String
+  branches        Branch[]
+  services        ServiceEnrollment[]
+  invoices        Invoice[]
+  roleAssignments RoleAssignment[]
+}
+
+model Branch {
+  id              String           @id @default(uuid()) @db.Uuid
+  companyId       String           @db.Uuid
+  code            String
+  name            String
+  company         Company          @relation(fields: [companyId], references: [id])
+  roleAssignments RoleAssignment[]
+
+  @@unique([companyId, code])
+  @@unique([id, companyId])
+}
+
+model User {
+  id              String           @id @default(uuid()) @db.Uuid
+  identitySubject String           @unique
+  email           String           @unique
+  isActive        Boolean          @default(true)
+  roles           RoleAssignment[]
+}
+
+model RoleAssignment {
+  id         String  @id @default(uuid()) @db.Uuid
+  userId     String  @db.Uuid
+  companyId  String  @db.Uuid
+  branchId   String? @db.Uuid
+  resourceId String? @db.Uuid
+  role       String
+  user       User    @relation(fields: [userId], references: [id])
+  company    Company @relation(fields: [companyId], references: [id])
+  branch     Branch? @relation(fields: [branchId, companyId], references: [id, companyId])
+
+  @@index([userId, companyId, branchId])
+}
+
+model Contact {
+  id        String              @id @default(uuid()) @db.Uuid
+  fullName  String
+  email     String?
+  phone     String?
+  createdAt DateTime            @default(now())
+  services  ServiceEnrollment[]
+}
+
+model ServiceEnrollment {
+  id          String            @id @default(uuid()) @db.Uuid
+  contactId   String            @db.Uuid
+  companyId   String            @db.Uuid
+  branchId    String            @db.Uuid
+  serviceType String
+  status      EnrollmentStatus  @default(ACTIVE)
+  contact     Contact           @relation(fields: [contactId], references: [id])
+  company     Company           @relation(fields: [companyId], references: [id])
+  classes     ClassEnrollment[]
+  cases       StudyAbroadCase[]
+  bookings    TourBooking[]
+  invoices    Invoice[]
+
+  @@index([companyId, branchId])
+}
+
+model Course {
+  id        String       @id @default(uuid()) @db.Uuid
+  companyId String       @db.Uuid
+  title     String
+  classes   ClassGroup[]
+}
+
+model ClassGroup {
+  id          String            @id @default(uuid()) @db.Uuid
+  courseId    String            @db.Uuid
+  companyId   String            @db.Uuid
+  branchId    String            @db.Uuid
+  code        String
+  course      Course            @relation(fields: [courseId], references: [id])
+  enrollments ClassEnrollment[]
+  lessons     Lesson[]
+
+  @@index([companyId, branchId])
+}
+
+model ClassEnrollment {
+  id                  String            @id @default(uuid()) @db.Uuid
+  classId             String            @db.Uuid
+  serviceEnrollmentId String            @db.Uuid
+  class               ClassGroup        @relation(fields: [classId], references: [id])
+  serviceEnrollment   ServiceEnrollment @relation(fields: [serviceEnrollmentId], references: [id])
+
+  @@unique([classId, serviceEnrollmentId])
+}
+
+model Lesson {
+  id          String       @id @default(uuid()) @db.Uuid
+  classId     String       @db.Uuid
+  startsAt    DateTime
+  topic       String
+  class       ClassGroup   @relation(fields: [classId], references: [id])
+  attendance  Attendance[]
+  assignments Assignment[]
+  feedback    Feedback[]
+}
+
+model Attendance {
+  id        String  @id @default(uuid()) @db.Uuid
+  lessonId  String  @db.Uuid
+  contactId String  @db.Uuid
+  status    String
+  notes     String?
+  lesson    Lesson  @relation(fields: [lessonId], references: [id])
+
+  @@unique([lessonId, contactId])
+}
+
+model Assignment {
+  id       String    @id @default(uuid()) @db.Uuid
+  lessonId String    @db.Uuid
+  title    String
+  dueAt    DateTime?
+  lesson   Lesson    @relation(fields: [lessonId], references: [id])
+}
+
+model Feedback {
+  id           String @id @default(uuid()) @db.Uuid
+  lessonId     String @db.Uuid
+  contactId    String @db.Uuid
+  authorUserId String @db.Uuid
+  comment      String
+  lesson       Lesson @relation(fields: [lessonId], references: [id])
+
+  @@index([contactId, lessonId])
+}
+
+model StudyAbroadCase {
+  id                  String            @id @default(uuid()) @db.Uuid
+  serviceEnrollmentId String            @db.Uuid
+  destination         String
+  intake              String?
+  serviceEnrollment   ServiceEnrollment @relation(fields: [serviceEnrollmentId], references: [id])
+  tasks               ChecklistTask[]
+}
+
+model ChecklistTask {
+  id     String          @id @default(uuid()) @db.Uuid
+  caseId String          @db.Uuid
+  title  String
+  status TaskStatus      @default(TODO)
+  dueAt  DateTime?
+  case   StudyAbroadCase @relation(fields: [caseId], references: [id])
+}
+
+model Tour {
+  id          String        @id @default(uuid()) @db.Uuid
+  companyId   String        @db.Uuid
+  branchId    String        @db.Uuid
+  title       String
+  departureAt DateTime?
+  bookings    TourBooking[]
+
+  @@index([companyId, branchId])
+}
+
+model TourBooking {
+  id                  String            @id @default(uuid()) @db.Uuid
+  tourId              String            @db.Uuid
+  serviceEnrollmentId String            @db.Uuid
+  status              String
+  tour                Tour              @relation(fields: [tourId], references: [id])
+  serviceEnrollment   ServiceEnrollment @relation(fields: [serviceEnrollmentId], references: [id])
+}
+
+model Invoice {
+  id                  String            @id @default(uuid()) @db.Uuid
+  companyId           String            @db.Uuid
+  branchId            String            @db.Uuid
+  serviceEnrollmentId String            @db.Uuid
+  invoiceNo           String
+  currency            String            @default("VND")
+  amount              Decimal           @db.Decimal(18, 2)
+  dueAt               DateTime
+  status              InvoiceStatus     @default(DRAFT)
+  company             Company           @relation(fields: [companyId], references: [id])
+  serviceEnrollment   ServiceEnrollment @relation(fields: [serviceEnrollmentId], references: [id])
+  payments            Payment[]
+
+  @@unique([companyId, invoiceNo])
+  @@index([companyId, branchId, dueAt])
+}
+
+model Payment {
+  id         String   @id @default(uuid()) @db.Uuid
+  invoiceId  String   @db.Uuid
+  amount     Decimal  @db.Decimal(18, 2)
+  currency   String
+  receivedAt DateTime
+  verifiedBy String?  @db.Uuid
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorUserId  String?  @db.Uuid
+  companyId    String?  @db.Uuid
+  action       String
+  resourceType String
+  resourceId   String
+  occurredAt   DateTime @default(now())
+  metadata     Json?
+
+  @@index([companyId, occurredAt])
+}
